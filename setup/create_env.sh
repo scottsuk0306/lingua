@@ -21,7 +21,7 @@ start_time=$(date +%s)
 current_date=$(date +%y%m%d)
 
 # Create environment name with the current date
-env_prefix=lingua_$current_date
+env_prefix=mup_lingua
 
 # Create the conda environment
 
