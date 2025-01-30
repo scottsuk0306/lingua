@@ -92,8 +92,13 @@ class LMTransformer(BaseTransformer):
         )
 
         h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
-
-        logits = self.output(self.norm(h))
+        h = self.norm(h)
+        
+        ### Begin muP code ###
+        mup_factor = self.config.dim // self.config.mup_dim_model_base
+        h = h / mup_factor
+        ### End muP code ###
+        logits = self.output(h)
         if target is not None:
             return cross_entropy(logits, target)
         else:

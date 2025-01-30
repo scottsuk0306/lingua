@@ -64,10 +64,15 @@ from apps.mup.transformer import (
     tp_parallelize,
     get_no_recompute_ops,
 )
+from apps.mup.optim import build_mup_adamw
+
+from apps.main.transformer import LMTransformer as SPLMTransformer
 from lingua.probe import AutoProbeD
 from lingua.stool import StoolArgs, launch_job
 
 import wandb
+from functools import partial
+
 
 logger = logging.getLogger()
 
@@ -88,6 +93,11 @@ class TrainArgs:
 
     # Nb optimizer steps to take
     steps: int = 1000
+    
+    ### Begin MuP code ###
+    use_mup: bool = False
+    mup_enable_coord_check_logging: bool = True
+    ### End MuP code ###
 
     data: DataArgs = field(default_factory=DataArgs)
     optim: OptimArgs = field(default_factory=OptimArgs)
@@ -252,9 +262,17 @@ def train(args: TrainArgs):
 
         # Initializing Model in meta device allows us to initialize models much bigger than 1 gpu's memory
         with torch.device("meta"):
-            model = LMTransformer(args.model)
+            if args.use_mup:
+                logger.info("Using Mu-parametrized model")
+                model = LMTransformer(args.model)
+            else:
+                logger.info("Using Standard-parametrized model")
+                model = SPLMTransformer(args.model)
+        
         logger.info("Model is built !")
-
+        logger.info("Model summary:")
+        logger.info(model)
+        
         model_param_count = get_num_params(model)
 
         model = parallelize_model(
@@ -296,7 +314,12 @@ def train(args: TrainArgs):
         logger.info(f"GPU memory usage: {gpu_memory_monitor}")
 
         # build optimizer after apply parallelisms to the model
-        optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
+        if args.use_mup:
+            factor = model.config.dim // model.config.mup_dim_model_base
+            optimizer, scheduler = build_mup_adamw(model, args.optim, args.steps, factor)
+        else:    
+            optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
+        
         data_loader_state = init_dataloader_state_from_args(
             args.data, dp_rank, dp_degree
         )
@@ -411,6 +434,31 @@ def train(args: TrainArgs):
                 assert (
                     next(model.parameters()).grad is None
                 ), "Probe model shouldn't have grads at this point"
+            
+            ### Begin MuP code ###
+            if args.mup_enable_coord_check_logging:
+                coord_check_dict = {
+                    'tok_embeddings': [],
+                    'attention': [],
+                    'feed_forward': [],
+                    'output': [],
+                }
+                def hook(module, input, output, key):
+                    with torch.no_grad():
+                        coord_check_dict[key].append(output.abs().mean().item())
+                coord_check_handles = []
+                for module_name, module in model.named_modules():
+                    if module_name == 'tok_embeddings':
+                        coord_check_handles.append(module.register_forward_hook(partial(hook, key='tok_embeddings')))
+                    elif module_name.endswith('.attention'):
+                        coord_check_handles.append(module.register_forward_hook(partial(hook, key='attention')))
+                    elif module_name.endswith('.feed_forward'):
+                        coord_check_handles.append(module.register_forward_hook(partial(hook, key='feed_forward')))
+                    elif module_name == 'output':
+                        coord_check_handles.append(module.register_forward_hook(partial(hook, key='output')))
+            else:
+                coord_check_dict = None
+            ### End MuP code ###
 
             loss = model(input_ids, labels)
 
@@ -503,7 +551,13 @@ def train(args: TrainArgs):
                     },
                     sep="/",
                 )
-
+                
+                ### Begin MuP code ###
+                if args.mup_enable_coord_check_logging and coord_check_dict is not None:
+                    for key in coord_check_dict:
+                        metrics[key + '_act_abs_mean'] = np.mean(coord_check_dict[key])
+                ### End MuP code ###
+                
                 to_sync = {}
                 to_sync["loss/out"] = loss.item()
                 metrics.update(dist_mean_dict(to_sync))
@@ -578,6 +632,9 @@ def train(args: TrainArgs):
                                 qos="lowest",
                             )
                         )
+            if args.mup_enable_coord_check_logging:
+                for handle in coord_check_handles:
+                    handle.remove()
 
             if preemption_flag["flag"]:
                 if not saved:
@@ -591,7 +648,7 @@ def train(args: TrainArgs):
                 requeue_slurm_job()
                 sys.exit(0)
 
-    if not saved:
+    if not saved and args.checkpoint.dump.keep > 0:
         checkpoint.save(
             model,
             optimizer,
@@ -642,9 +699,12 @@ def main():
     Plus all the default values in TrainArgs dataclass.
     """
     cli_args = OmegaConf.from_cli()
-    file_cfg = OmegaConf.load(cli_args.config)
-    # We remove 'config' attribute from config as the underlying DataClass does not have it
-    del cli_args.config
+    
+    file_cfg = {}
+    if hasattr(cli_args, "config"):
+        file_cfg = OmegaConf.load(cli_args.config)
+        # We remove 'config' attribute from config as the underlying DataClass does not have it
+        del cli_args.config
 
     default_cfg = OmegaConf.structured(TrainArgs())
     cfg = OmegaConf.merge(default_cfg, file_cfg, cli_args)

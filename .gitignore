@@ -1,3 +1,6 @@
+# mup related outputs
+apps/mup/coord_check/*/out/*
+
 *.pyc
 .vscode
 *.ipynb

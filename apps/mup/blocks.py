@@ -44,13 +44,13 @@ class BaseTransformerArgs:
 
     rope_theta: float = 10000.0
 
-    init_base_std: Optional[float] = None
+    init_base_std: float = 0.1
     init_std_factor: str = "disabled"
 
     max_seqlen: int = 1024
     
     ### Begin MuP code ###
-    mup_dim_model_base: int = 32  # Base model dimension
+    mup_dim_model_base: int = 256  # Base model dimension
     mup_scale_emb: float = 1.0  # Output embedding scaling
     mup_scale_depth: float = 1.0  # Residual connection scaling
     mup_init_std: float = 0.02  # Base initialization standard deviation
@@ -436,7 +436,20 @@ class Attention(nn.Module):
             a=-3 * init_std,
             b=3 * init_std,
         )
+    
+    def mup_reset_parameters(self, init_std: float, in_factor: float, out_factor: float):
+        for w in [self.wq, self.wk, self.wv]:
+            nn.init.normal_(
+                w.weight,
+                mean=0.0,
+                std=init_std / in_factor,
+            )
 
+        nn.init.normal_(
+            self.wo.weight,
+            mean=0.0,
+            std=init_std / out_factor,
+        )
 
 class FeedForward(nn.Module):
     def __init__(
@@ -500,6 +513,21 @@ class FeedForward(nn.Module):
             std=out_init_std,
             a=-3 * out_init_std,
             b=3 * out_init_std,
+        )
+    
+    def mup_reset_parameters(self, init_std: float, in_factor: int, out_factor: int):
+        in_init_std = init_std / in_factor
+        out_init_std = init_std / out_factor
+        for w in [self.w1, self.w3]:
+            nn.init.normal_(
+                w.weight,
+                mean=0.0,
+                std=in_init_std,
+            )
+        nn.init.normal_(
+            self.w2.weight,
+            mean=0.0,
+            std=out_init_std,
         )
 
 
@@ -567,12 +595,27 @@ class TransformerBlock(nn.Module):
         
         return out
 
-    def init_weights(self, init_std=None, factor=1.0):
-        self.attention.reset_parameters(init_std, factor)
-        self.attention_norm.reset_parameters()
+    def init_weights(self, init_std=None, factor=1.0, use_mup: bool = True):
+        ### Begin MuP code ###
+        if use_mup:
+            assert init_std is not None
 
-        self.feed_forward.reset_parameters(init_std, factor)
-        self.ffn_norm.reset_parameters()
+            width_factor   = self.config.dim // self.config.mup_dim_model_base
+            mup_in_factor  = math.sqrt(width_factor)
+            mup_out_factor = math.sqrt(2 * self.config.n_layers * width_factor)
+
+            self.attention.mup_reset_parameters(init_std, mup_in_factor, mup_out_factor)
+            self.attention_norm.reset_parameters()
+            
+            self.feed_forward.mup_reset_parameters(init_std, mup_in_factor, mup_out_factor)
+            self.ffn_norm.reset_parameters()
+        ### End MuP code ###
+        else:
+            self.attention.reset_parameters(init_std, factor)
+            self.attention_norm.reset_parameters()
+
+            self.feed_forward.reset_parameters(init_std, factor)
+            self.ffn_norm.reset_parameters()
 
 
 class BaseTransformer(nn.Module):
