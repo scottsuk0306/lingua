@@ -14,6 +14,8 @@ from torch.nn.attention.flex_attention import (
     _mask_mod_signature,
 )
 
+import math
+
 from lingua import probe
 
 flex_attention_comp = torch.compile(flex_attention)
@@ -539,15 +541,29 @@ class TransformerBlock(nn.Module):
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ) -> torch.Tensor:
+        
+        residual = x
 
-        h = x + self.attention(
+        h = self.attention(
             self.attention_norm(x),
             freq_cis,
             tok_idx=tok_idx,
             mask=mask,
             attn_impl=attn_impl,
         )
-        out = h + self.feed_forward(self.ffn_norm(h))
+        
+        ### Begin MuP code ###
+        h = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
+        ### End MuP code ###
+        
+        residual = h
+        
+        h = self.feed_forward(self.ffn_norm(h))
+        
+        ### Begin MuP code ###
+        out = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
+        ### End MuP code ###
+        
         return out
 
     def init_weights(self, init_std=None, factor=1.0):
