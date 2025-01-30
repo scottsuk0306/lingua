@@ -46,6 +46,13 @@ class BaseTransformerArgs:
     init_std_factor: str = "disabled"
 
     max_seqlen: int = 1024
+    
+    ### Begin MuP code ###
+    mup_scale_emb: float = 1.0  # Output embedding scaling
+    mup_scale_depth: float = 1.0  # Residual connection scaling
+    mup_init_std: float = 0.02  # Base initialization standard deviation
+    mup_learning_rate_scale: float = 1.0  # Learning rate scaling factor
+    ### End MuP code ###
 
 
 def cross_entropy(pred, target, **kwargs):
@@ -500,6 +507,7 @@ class TransformerBlock(nn.Module):
         assert (args.head_dim is not None) or (
             args.n_heads is not None
         ), "Should specify at least head_dim or n_heads"
+        self.config = args
         self.head_dim = args.head_dim or args.dim // args.n_heads
         self.n_heads = args.n_heads or args.dim // args.head_dim
         self.n_kv_heads = args.n_kv_heads or self.n_heads
@@ -553,6 +561,7 @@ class TransformerBlock(nn.Module):
 class BaseTransformer(nn.Module):
     def __init__(self, args: BaseTransformerArgs):
         super().__init__()
+        self.config = args
         self.dim = args.dim
         self.init_base_std = args.init_base_std
         self.init_std_factor = InitStdFactor(args.init_std_factor)
@@ -574,6 +583,9 @@ class BaseTransformer(nn.Module):
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ):
+        ### Begin MuP code ###
+        h = h * self.config.mup_scale_emb
+        ### End MuP code ###
 
         freq_cis = self.rope_embeddings(seqlen=self.max_seqlen, tok_idx=tok_idx)
 
