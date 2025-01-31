@@ -20,7 +20,7 @@ def build_mup_adamw(model: nn.Module, args: OptimArgs, n_steps: int, mup_factor:
     
     for n, p in param_dict.items():
         if p.dim() >= 2:
-            if n.endswith('c_attn.weight') or n.endswith('c_fc.weight') or n.endswith('c_proj.weight'):
+            if ('attention.w' in n and n.endswith('.weight')) or ('feed_forward.w' in n and n.endswith('.weight')):
                 mup_decay_params.append(p)
             else:
                 decay_params.append(p)

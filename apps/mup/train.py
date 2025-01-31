@@ -315,7 +315,7 @@ def train(args: TrainArgs):
 
         # build optimizer after apply parallelisms to the model
         if args.use_mup:
-            factor = model.config.dim // model.config.mup_dim_model_base
+            factor = model.config.dim / model.config.mup_dim_model_base
             optimizer, scheduler = build_mup_adamw(model, args.optim, args.steps, factor)
         else:    
             optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
@@ -444,8 +444,16 @@ def train(args: TrainArgs):
                     'output': [],
                 }
                 def hook(module, input, output, key):
+                    # factor = model.config.dim / model.config.mup_dim_model_base
+                    factor = 1.0
+                    
                     with torch.no_grad():
-                        coord_check_dict[key].append(output.abs().mean().item())
+                        if key != "output":
+                            act_norm = output.abs().mean().item()
+                        elif key == "output":
+                            act_norm = output.abs().mean().item() / factor
+                        coord_check_dict[key].append(act_norm)
+
                 coord_check_handles = []
                 for module_name, module in model.named_modules():
                     if module_name == 'tok_embeddings':

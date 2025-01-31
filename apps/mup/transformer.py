@@ -93,36 +93,35 @@ class LMTransformer(BaseTransformer):
 
         h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
         h = self.norm(h)
-        
+
         ### Begin muP code ###
-        mup_factor = self.config.dim // self.config.mup_dim_model_base
-        h = h / mup_factor
+        # mup_factor = self.config.dim / self.config.mup_dim_model_base
+        # h = h / mup_factor
         ### End muP code ###
+        
         logits = self.output(h)
+        
         if target is not None:
             return cross_entropy(logits, target)
         else:
             return logits
 
-    def reset_parameters(self, init_std=None):
+    def reset_parameters(self):
         # Either use fixed base std or sqrt model dim
+        assert self.config.init_base_std is not None
         super().reset_parameters()
-        init_std = init_std or (self.dim ** (-0.5))
+        init_std = self.config.init_base_std
         self.norm.reset_parameters()
-        nn.init.trunc_normal_(
+        nn.init.normal_(
             self.tok_embeddings.weight,
             mean=0.0,
             std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
         )
         if not self.weight_tying:
             nn.init.trunc_normal_(
                 self.output.weight,
                 mean=0.0,
                 std=init_std,
-                a=-3 * init_std,
-                b=3 * init_std,
             )
 
 

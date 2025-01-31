@@ -45,17 +45,17 @@ class BaseTransformerArgs:
     rope_theta: float = 10000.0
 
     init_base_std: float = 0.1
-    init_std_factor: str = "disabled"
+    init_std_factor: str = "current_depth"
 
     max_seqlen: int = 1024
     
-    ### Begin MuP code ###
+    ### Begin muP code ###
     mup_dim_model_base: int = 256  # Base model dimension
     mup_scale_emb: float = 1.0  # Output embedding scaling
     mup_scale_depth: float = 1.0  # Residual connection scaling
     mup_init_std: float = 0.02  # Base initialization standard deviation
     mup_learning_rate_scale: float = 1.0  # Learning rate scaling factor
-    ### End MuP code ###
+    ### End muP code ###
 
 
 def cross_entropy(pred, target, **kwargs):
@@ -316,6 +316,7 @@ class TiedLinear(nn.Module):
 class Attention(nn.Module):
     def __init__(
         self,
+        args,
         dim: int,
         head_dim: int,
         n_heads: int,
@@ -324,6 +325,7 @@ class Attention(nn.Module):
     ):
         super().__init__()
 
+        self.args = args
         self.dim = dim
         self.head_dim = head_dim
         self.rope_theta = rope_theta
@@ -373,6 +375,11 @@ class Attention(nn.Module):
         xq = xq.view(bsz, seq_len, self.n_heads, self.head_dim)
         xk = xk.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
         xv = xv.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+        
+        ### Begin muP code ###
+        attention_scale = 1.0
+        # attention_scale = 1.0 / xk.size(-1)
+        ### End muP code ###
 
         xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
 
@@ -385,12 +392,14 @@ class Attention(nn.Module):
         xv = repeat_kv(xv, self.heads_per_group, dim=2)
 
         if attn_impl == "flex_attention":
+            raise NotImplementedError("Flex attention not supported for muP")
             assert mask is None or isinstance(mask, BlockMask)
             xq, xk, xv = map(lambda e: e.transpose(1, 2), (xq, xk, xv))
             output = flex_attention_comp(xq, xk, xv, block_mask=mask)
             output = output.transpose(1, 2).contiguous()  # B H S D -> B S H D
 
         elif attn_impl == "fmha":
+            raise NotImplementedError("FMHA not supported for muP")
             assert mask is None or isinstance(mask, AttentionBias)
             output = fmha.memory_efficient_attention(xq, xk, xv, attn_bias=mask)
             # This uses B S H D instead of B H S D of pytorch
@@ -406,6 +415,7 @@ class Attention(nn.Module):
                 xv,
                 is_causal=is_causal,
                 attn_mask=mask,
+                scale=attention_scale,
             )
             output = output.transpose(1, 2).contiguous()  # B H S D -> B S H D
         else:
@@ -451,9 +461,18 @@ class Attention(nn.Module):
             std=init_std / out_factor,
         )
 
+def adjust_hidden_dim(hidden_dim, ffn_dim_multiplier, multiple_of):
+    hidden_dim = int(2 * hidden_dim / 3)
+    if ffn_dim_multiplier is not None:
+        hidden_dim = int(ffn_dim_multiplier * hidden_dim)
+    hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+    return hidden_dim
+
+
 class FeedForward(nn.Module):
     def __init__(
         self,
+        args,
         dim: int,
         hidden_dim: int,
         multiple_of: int,
@@ -462,13 +481,10 @@ class FeedForward(nn.Module):
     ):
         super().__init__()
 
-        hidden_dim = int(2 * hidden_dim / 3)
-        if ffn_dim_multiplier is not None:
-            hidden_dim = int(ffn_dim_multiplier * hidden_dim)
-        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
-        assert hidden_dim % mp_size == 0
-
+        self.args = args
         self.dim = dim
+        hidden_dim = adjust_hidden_dim(hidden_dim, ffn_dim_multiplier, multiple_of)
+        
         self.hidden_dim = hidden_dim
 
         self.w1 = nn.Linear(
@@ -547,6 +563,7 @@ class TransformerBlock(nn.Module):
         assert args.dim % args.n_heads == 0
 
         self.attention = Attention(
+            args=args,
             dim=args.dim,
             head_dim=self.head_dim,
             n_heads=self.n_heads,
@@ -554,6 +571,7 @@ class TransformerBlock(nn.Module):
             rope_theta=args.rope_theta,
         )
         self.feed_forward = FeedForward(
+            args=args,
             dim=args.dim,
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
@@ -581,26 +599,26 @@ class TransformerBlock(nn.Module):
             attn_impl=attn_impl,
         )
         
-        ### Begin MuP code ###
+        ### Begin muP code ###
         h = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
-        ### End MuP code ###
+        ### End muP code ###
         
         residual = h
         
         h = self.feed_forward(self.ffn_norm(h))
         
-        ### Begin MuP code ###
+        ### Begin muP code ###
         out = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
-        ### End MuP code ###
+        ### End muP code ###
         
         return out
 
     def init_weights(self, init_std=None, factor=1.0, use_mup: bool = True):
-        ### Begin MuP code ###
+        ### Begin muP code ###
         if use_mup:
             assert init_std is not None
 
-            width_factor   = self.config.dim // self.config.mup_dim_model_base
+            width_factor   = self.config.dim / self.config.mup_dim_model_base
             mup_in_factor  = math.sqrt(width_factor)
             mup_out_factor = math.sqrt(2 * self.config.n_layers * width_factor)
 
@@ -609,7 +627,7 @@ class TransformerBlock(nn.Module):
             
             self.feed_forward.mup_reset_parameters(init_std, mup_in_factor, mup_out_factor)
             self.ffn_norm.reset_parameters()
-        ### End MuP code ###
+        ### End muP code ###
         else:
             self.attention.reset_parameters(init_std, factor)
             self.attention_norm.reset_parameters()
@@ -643,9 +661,9 @@ class BaseTransformer(nn.Module):
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
     ):
-        ### Begin MuP code ###
+        ### Begin muP code ###
         h = h * self.config.mup_scale_emb
-        ### End MuP code ###
+        ### End muP code ###
 
         freq_cis = self.rope_embeddings(seqlen=self.max_seqlen, tok_idx=tok_idx)
 
@@ -659,6 +677,9 @@ class BaseTransformer(nn.Module):
 
     def init_weights(self):
         self.reset_parameters()
+        
+        assert self.init_std_factor in [InitStdFactor.CURRENT_DEPTH, InitStdFactor.GLOBAL_DEPTH]
+        
         for depth, layer in enumerate(self.layers):
             factor = {
                 InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
