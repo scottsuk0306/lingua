@@ -332,6 +332,8 @@ class Attention(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.heads_per_group = self.n_heads // self.n_kv_heads
+        
+        assert dim == n_heads * head_dim
 
         self.wq = nn.Linear(
             dim,
@@ -554,7 +556,7 @@ class FeedForward(nn.Module):
         in_init_std = init_std * in_width_multiplier
         
         out_width_multiplier = float(self.hidden_dim / self.base_hidden_dim) ** -0.5
-        out_init_std = init_std * out_width_multiplier * in_width_multiplier
+        out_init_std = init_std * out_width_multiplier
     
         in_init_std = in_init_std
         out_init_std = out_init_std / factor
@@ -645,7 +647,8 @@ class TransformerBlock(nn.Module):
         )
         
         ### Begin muP code ###
-        h = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
+        # h = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
+        h = residual + h
         ### End muP code ###
         
         residual = h
@@ -653,13 +656,15 @@ class TransformerBlock(nn.Module):
         h = self.feed_forward(self.ffn_norm(h))
         
         ### Begin muP code ###
-        out = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
+        # out = residual + h * (self.config.mup_scale_depth / math.sqrt(self.config.n_layers))
+        out = residual + h
         ### End muP code ###
         
         return out
 
     def init_weights(self, init_std=None, factor=1.0, use_mup: bool = True):
         ### Begin muP code ###
+        use_mup = True
         if use_mup:
             assert init_std is not None
 
@@ -703,7 +708,7 @@ class BaseTransformer(nn.Module):
         attn_impl: str = "sdpa",
     ):
         ### Begin muP code ###
-        h = h * self.config.mup_scale_emb
+        # h = h * self.config.mup_scale_emb
         ### End muP code ###
 
         freq_cis = self.rope_embeddings(seqlen=self.max_seqlen, tok_idx=tok_idx)
@@ -728,7 +733,5 @@ class BaseTransformer(nn.Module):
                 InitStdFactor.DIM_RATIO: self.dim / 4096,
                 InitStdFactor.DISABLED: 1.0,
             }[self.init_std_factor]
-
-            print(factor)
             
             layer.init_weights(self.init_base_std, factor)

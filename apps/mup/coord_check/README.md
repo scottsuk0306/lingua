@@ -1,18 +1,19 @@
-- prev_mup
-- prev_mup_v2
-    - attention scaling
-    - logit scaling before norm
+## Logs
 
-- prev_mup_v3
-    - zero init for lm head
+## MuP v1
+- Initial version
 
-- prev_mup_v4
-    - no attention scaling
+## MuP v2
+- Added initialization for Feed forward and Attention layers
 
-- ~~prev_mup_v5~~
-    - ~~no logit scaling after norm~~ go back to logit scaling before norm
-    - logit explodes
+- `TransformerBlock.init_weights` change `use_mup=False` to `use_mup=True`
 
+- Step 0 became stable for all widths
 
-- mupv6
- - change to global depth - not works
+## MuP v3
+
+ - Added learning rate scaling for different parameter groups
+
+ - Using the functionalities in `apps/mup/optim.py`
+
+ 

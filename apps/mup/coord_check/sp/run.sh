@@ -15,8 +15,8 @@ run_training() {
     master_port=$(( ( RANDOM % 1000 )  + 28000 ))
 
     CUDA_VISIBLE_DEVICES=$gpu_id python -m apps.mup.train \
-        name=false \
-        use_mup=true \
+        name=sp \
+        use_mup=false \
         dump_dir=$out_dir \
         steps=10 \
         probe_freq=null \
@@ -35,7 +35,6 @@ run_training() {
         model.dim=$width \
         model.n_layers=2 \
         model.n_heads=$n_heads \
-        model.mup_dim_model_base=256 \
         data.root_dir=/mnt/vast/pretraining-data-jsonl/ \
         "data.sources={english/dclm_crossdeduped/shard_000: 100.0}" \
         data.batch_size=4 \
@@ -56,7 +55,8 @@ run_training() {
 
 # Configuration arrays
 widths=(256 512 1024 2048 4096)
-seeds=(1 2 3 4 5)
+# seeds=(1 2 3 4 5)
+seeds=(1)
 
 # Initialize GPU counter
 gpu_id=0

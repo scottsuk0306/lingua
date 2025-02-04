@@ -443,14 +443,10 @@ def train(args: TrainArgs):
                     'output': [],
                 }
                 def hook(module, input, output, key):
-                    # factor = model.config.dim / model.config.mup_dim_model_base
-                    factor = 1.0
                     
                     with torch.no_grad():
-                        if key != "output":
-                            act_norm = output.abs().mean().item()
-                        elif key == "output":
-                            act_norm = output.abs().mean().item() / factor
+                        act_norm = output.abs().mean().item()
+                        assert act_norm is not float('nan')
                         coord_check_dict[key].append(act_norm)
 
                 coord_check_handles = []
