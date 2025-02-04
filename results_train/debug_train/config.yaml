@@ -1,0 +1,106 @@
+name: debug_train
+dump_dir: results_train/debug_train
+seed: 777
+grad_acc_steps: 1
+gc_collect_freq: 1000
+probe_freq: null
+steps: 1000
+use_mup: true
+mup_enable_coord_check_logging: true
+data:
+  root_dir: /mnt/vast/pretraining-data-jsonl/
+  sources:
+    english/dclm_crossdeduped/shard_000: 100.0
+  batch_size: 4
+  seq_len: 4096
+  n_views: 2
+  seed: 42
+  add_bos: true
+  add_eos: true
+  load_async: true
+  prefetch_size: 1024
+  tokenizer:
+    name: tiktoken
+    path: tokenizers/llama3/tokenizer.model
+optim:
+  lr: 0.003
+  weight_decay: 0.033
+  epsilon: 1.0e-08
+  beta1: 0.9
+  beta2: 0.95
+  clip: 1.0
+  scheduler: cosine
+  warmup: 5000
+  lr_min_ratio: 1.0e-06
+  cycle_length: 1.0
+  cosine_theta: 1.0
+  annealing_step: 1000
+  decay_fraction: 0.1
+  exp_factor: 0.5
+model:
+  dim: 512
+  n_layers: 8
+  head_dim: null
+  n_heads: 8
+  n_kv_heads: null
+  ffn_dim_multiplier: 2.5
+  multiple_of: 256
+  norm_eps: 1.0e-05
+  rope_theta: 10000.0
+  init_base_std: 0.1
+  init_std_factor: global_depth
+  max_seqlen: 4096
+  mup_dim_model_base: 256
+  mup_scale_emb: 1.0
+  mup_scale_depth: 1.0
+  seed: 42
+  vocab_size: 128256
+  weight_tying: false
+  sliding_window: null
+distributed:
+  dp_shard: 1
+  dp_replicate: 1
+  tp_size: 1
+  selective_activation_checkpointing: false
+  compile: true
+  fsdp_type: no_shard
+  model_dtype: bf16
+  float8_recipe: null
+  float8_filter: layers\.[0-9]+\.
+  matmul_allow_tf32: false
+  detect_anomaly: false
+  compile_cache_size_limit: 8
+  spawn_method: forkserver
+  master_port: null
+env:
+  MKL_SERVICE_FORCE_INTEL: GNU
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  ENABLE_INTRA_NODE_COMM: '1'
+  TORCH_NCCL_AVOID_RECORD_STREAMS: '1'
+  NCCL_IB_TIMEOUT: '22'
+  NCCL_DEBUG: INFO
+  TORCH_NCCL_ASYNC_ERROR_HANDLING: '1'
+checkpoint:
+  dump:
+    every: 10000
+    keep: 0
+  eval:
+    every: 10000
+    keep: 0
+  path: results_train/debug_train/checkpoints
+  init_ckpt_path: null
+  continue_training_from_init: false
+profiling:
+  run: false
+  trace_folder: profiling
+  mem_warmup: 100
+  mem_steps: 2
+  profile_warmup: 102
+  profile_steps: 2
+logging:
+  freq: 1
+  acc_freq: null
+  wandb: null
+async_eval_gpus: null
+eval: null

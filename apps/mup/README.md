@@ -2,9 +2,9 @@
 
 | Operation | Specific Embedding | Details |
 |-----------|-------------------|----------|
-| Output Scaling | Multiply the output of the embedding by `scale_emb` | [view code](transformer.py#L587)
-| Residual Connection Scaling | Scale the output tensor of a block before adding to each residual connection in each layer by `scale_depth/√num_layers` | [view code](transformer.py#L556)
-| Initialization of Tensors | Set the initialization standard deviation of each two-dimensional tensor parameter to `init_std/√(dm/dbase)`, and set other parameters' initialization to `init_std` | [view code](transformer.py#L602) |
+| Output Scaling | Multiply the output of the embedding by `scale_emb` | [view code](blocks.py#L587)
+| Residual Connection Scaling | Scale the output tensor of a block before adding to each residual connection in each layer by `scale_depth/√num_layers` | [view code](blocks.py#L584-L594)
+| Initialization of Tensors | Set the initialization standard deviation of each two-dimensional tensor parameter to `init_std/√(dm/dbase)`, and set other parameters' initialization to `init_std` | [view code](blocks.py#L599-L612) |
 | Learning Rate Scaling of Tensors | Adjust the learning rate of each two-dimensional tensor parameter to `1/(dm/dbase)` times the learning rate of other parts (or the overall learning rate) |
 | LM Head Scaling | Adjust the output logits to `1/(dm/dbase)` times the original value |
 

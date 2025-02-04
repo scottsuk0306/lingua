@@ -36,7 +36,7 @@ class BaseTransformerArgs:
     n_heads: Optional[int] = None
     n_kv_heads: Optional[int] = None
 
-    ffn_dim_multiplier: Optional[float] = None
+    ffn_dim_multiplier: float = 2.5 # MiniCPM's default value
 
     multiple_of: int = 256
 
@@ -45,7 +45,7 @@ class BaseTransformerArgs:
     rope_theta: float = 10000.0
 
     init_base_std: float = 0.1
-    init_std_factor: str = "current_depth"
+    init_std_factor: str = "global_depth"
 
     max_seqlen: int = 1024
     
@@ -53,8 +53,6 @@ class BaseTransformerArgs:
     mup_dim_model_base: int = 256  # Base model dimension
     mup_scale_emb: float = 1.0  # Output embedding scaling
     mup_scale_depth: float = 1.0  # Residual connection scaling
-    mup_init_std: float = 0.02  # Base initialization standard deviation
-    mup_learning_rate_scale: float = 1.0  # Learning rate scaling factor
     ### End muP code ###
 
 
@@ -316,7 +314,7 @@ class TiedLinear(nn.Module):
 class Attention(nn.Module):
     def __init__(
         self,
-        args,
+        args: BaseTransformerArgs,
         dim: int,
         head_dim: int,
         n_heads: int,
@@ -329,6 +327,7 @@ class Attention(nn.Module):
         self.dim = dim
         self.head_dim = head_dim
         self.rope_theta = rope_theta
+        self.base_dim = self.args.mup_dim_model_base
 
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
@@ -377,8 +376,8 @@ class Attention(nn.Module):
         xv = xv.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
         
         ### Begin muP code ###
+        # attention_scale = float(self.head_dim) ** -1.0 
         attention_scale = 1.0
-        # attention_scale = 1.0 / xk.size(-1)
         ### End muP code ###
 
         xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
@@ -447,24 +446,35 @@ class Attention(nn.Module):
             b=3 * init_std,
         )
     
-    def mup_reset_parameters(self, init_std: float, in_factor: float, out_factor: float):
+    def mup_reset_parameters(self, init_std: float, factor: float):
+        
+        in_width_multiplier = float(self.dim / self.base_dim) ** (-0.5)
+        in_init_std = init_std * in_width_multiplier
+        
+        out_width_multiplier = float(self.dim / self.base_dim) ** (-0.5)
+        out_init_std = init_std * out_width_multiplier
+        out_init_std = out_init_std / factor
+        
         for w in [self.wq, self.wk, self.wv]:
-            nn.init.normal_(
+            nn.init.trunc_normal_(
                 w.weight,
                 mean=0.0,
-                std=init_std / in_factor,
+                std=in_init_std,
+                a=-3 * in_init_std,
+                b=3 * in_init_std,
             )
 
-        nn.init.normal_(
+        nn.init.trunc_normal_(
             self.wo.weight,
             mean=0.0,
-            std=init_std / out_factor,
+            std=out_init_std,
+            a=-3 * out_init_std,
+            b=3 * out_init_std,
         )
 
 def adjust_hidden_dim(hidden_dim, ffn_dim_multiplier, multiple_of):
-    hidden_dim = int(2 * hidden_dim / 3)
-    if ffn_dim_multiplier is not None:
-        hidden_dim = int(ffn_dim_multiplier * hidden_dim)
+    assert ffn_dim_multiplier is not None    
+    hidden_dim = int(ffn_dim_multiplier * hidden_dim)
     hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
     return hidden_dim
 
@@ -472,20 +482,24 @@ def adjust_hidden_dim(hidden_dim, ffn_dim_multiplier, multiple_of):
 class FeedForward(nn.Module):
     def __init__(
         self,
-        args,
+        args: BaseTransformerArgs,
         dim: int,
         hidden_dim: int,
         multiple_of: int,
-        ffn_dim_multiplier: Optional[float],
+        ffn_dim_multiplier: float,
         mp_size: int = 1,
     ):
         super().__init__()
 
         self.args = args
         self.dim = dim
-        hidden_dim = adjust_hidden_dim(hidden_dim, ffn_dim_multiplier, multiple_of)
+        self.hidden_dim = adjust_hidden_dim(dim, ffn_dim_multiplier, multiple_of)
         
-        self.hidden_dim = hidden_dim
+        self.base_dim = self.args.mup_dim_model_base
+        self.base_hidden_dim = adjust_hidden_dim(self.base_dim, ffn_dim_multiplier, multiple_of)
+        
+        assert self.hidden_dim % mp_size == 0
+        assert self.base_hidden_dim % mp_size == 0
 
         self.w1 = nn.Linear(
             dim,
@@ -531,19 +545,47 @@ class FeedForward(nn.Module):
             b=3 * out_init_std,
         )
     
-    def mup_reset_parameters(self, init_std: float, in_factor: int, out_factor: int):
-        in_init_std = init_std / in_factor
-        out_init_std = init_std / out_factor
+    def mup_reset_parameters(self, init_std: float, factor: float):
+        
+        assert init_std is not None
+        assert factor is not None
+        
+        in_width_multiplier = float(self.dim / self.base_dim) ** -0.5
+        in_init_std = init_std * in_width_multiplier
+        
+        out_width_multiplier = float(self.hidden_dim / self.base_hidden_dim) ** -0.5
+        out_init_std = init_std * out_width_multiplier * in_width_multiplier
+    
+        in_init_std = in_init_std
+        out_init_std = out_init_std / factor
+        
+        # width_factor = float(self.dim / self.base_dim)       
+        # mup_in_factor  = math.sqrt(width_factor)
+        # mup_out_factor = math.sqrt(2 * 2 * width_factor)
+        
+        # print(f"mup_in_factor: {1/mup_in_factor}")
+        # print(f"mup_out_factor: {1/mup_out_factor}")
+        
+        # print(f"prev in_init_std: ", {init_std/mup_in_factor})
+        # print(f"prev out_init_std: ", {init_std/mup_out_factor})
+        
+        # print(f"in_init_std: {in_init_std}")
+        # print(f"out_init_std: {out_init_std}")
+        
         for w in [self.w1, self.w3]:
-            nn.init.normal_(
+            nn.init.trunc_normal_(
                 w.weight,
                 mean=0.0,
                 std=in_init_std,
+                a=-3 * in_init_std,
+                b=3 * in_init_std,
             )
-        nn.init.normal_(
+        nn.init.trunc_normal_(
             self.w2.weight,
             mean=0.0,
             std=out_init_std,
+            a=-3 * out_init_std,
+            b=3 * out_init_std,
         )
 
 
@@ -570,10 +612,13 @@ class TransformerBlock(nn.Module):
             n_kv_heads=self.n_kv_heads,
             rope_theta=args.rope_theta,
         )
+
+        hidden_dim = adjust_hidden_dim(args.dim, args.ffn_dim_multiplier, args.multiple_of)
+
         self.feed_forward = FeedForward(
             args=args,
             dim=args.dim,
-            hidden_dim=4 * args.dim,
+            hidden_dim=hidden_dim,
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
         )
@@ -618,14 +663,10 @@ class TransformerBlock(nn.Module):
         if use_mup:
             assert init_std is not None
 
-            width_factor   = self.config.dim / self.config.mup_dim_model_base
-            mup_in_factor  = math.sqrt(width_factor)
-            mup_out_factor = math.sqrt(2 * self.config.n_layers * width_factor)
-
-            self.attention.mup_reset_parameters(init_std, mup_in_factor, mup_out_factor)
+            self.attention.mup_reset_parameters(init_std, factor)
             self.attention_norm.reset_parameters()
             
-            self.feed_forward.mup_reset_parameters(init_std, mup_in_factor, mup_out_factor)
+            self.feed_forward.mup_reset_parameters(init_std, factor)
             self.ffn_norm.reset_parameters()
         ### End muP code ###
         else:
@@ -688,4 +729,6 @@ class BaseTransformer(nn.Module):
                 InitStdFactor.DISABLED: 1.0,
             }[self.init_std_factor]
 
+            print(factor)
+            
             layer.init_weights(self.init_base_std, factor)

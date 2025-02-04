@@ -56,7 +56,8 @@ run_training() {
 
 # Configuration arrays
 widths=(256 512 1024 2048 4096)
-seeds=(1 2 3 4 5)
+# seeds=(1 2 3 4 5)
+seeds=(1)
 
 # Initialize GPU counter
 gpu_id=0
