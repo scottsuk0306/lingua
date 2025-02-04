@@ -92,13 +92,13 @@ class LMTransformer(BaseTransformer):
         )
 
         h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
-        h = self.norm(h)
 
         ### Begin muP code ###
-        # mup_factor = self.config.dim / self.config.mup_dim_model_base
-        # h = h / mup_factor
+        width_multiplier = (self.config.dim / self.config.mup_dim_model_base) ** -1.0
+        h = h * width_multiplier
         ### End muP code ###
-        
+
+        h = self.norm(h)
         logits = self.output(h)
         
         if target is not None:
@@ -112,17 +112,24 @@ class LMTransformer(BaseTransformer):
         super().reset_parameters()
         init_std = self.config.init_base_std
         self.norm.reset_parameters()
-        nn.init.normal_(
+        nn.init.trunc_normal_(
             self.tok_embeddings.weight,
             mean=0.0,
             std=init_std,
+            a=-3 * init_std,
+            b=3 * init_std,
         )
         if not self.weight_tying:
-            nn.init.trunc_normal_(
-                self.output.weight,
-                mean=0.0,
-                std=init_std,
-            )
+            # in practice, output layers are usually initialized to 0
+            nn.init.zeros_(self.output.weight)
+            
+            # nn.init.trunc_normal_(
+            #     self.output.weight,
+            #     mean=0.0,
+            #     std=init_std,
+            #     a=-3 * init_std,
+            #     b=3 * init_std,
+            # )
 
 
 # Optional policy for activation checkpointing. With None, we stick to the default (defined distributed.py: default_no_recompute_ops)

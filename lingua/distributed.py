@@ -74,6 +74,9 @@ class DistributedArgs:
     compile_cache_size_limit: int = 8
 
     spawn_method: str = "forkserver"
+    
+    # custom port setup for debugging
+    master_port: Optional[int] = None
 
 
 @dataclass
@@ -252,6 +255,13 @@ def setup_torch_distributed(dist_args):
     os.environ["MASTER_PORT"] = str(
         get_master_port(job_id=int(os.environ.get("SLURM_JOB_ID", -1)))
     )
+    
+    logger.info("MASTER_ADDR: %s" % os.environ["MASTER_ADDR"])
+    logger.info("MASTER_PORT: %s" % os.environ["MASTER_PORT"])
+    
+    if dist_args.master_port is not None:
+        os.environ["MASTER_PORT"] = str(dist_args.master_port)
+        logger.info("Changed MASTER_PORT to: %s" % os.environ["MASTER_PORT"])
 
     if get_is_torch_run():
         logger.info(f"Run launched with torchrun, local rank: {local_rank}")
