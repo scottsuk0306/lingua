@@ -1,7 +1,7 @@
 for width in 256 512 1024 2048 4096; do
 # for width in 256; do
-    # for seed in 1; do
     for seed in 1; do
+    # for seed in 1 2 3 4 5; do
     # for seed in 1; do
         head_size=64
         n_heads=$((width / head_size))
@@ -19,7 +19,6 @@ for width in 256 512 1024 2048 4096; do
             optim.lr=3e-3 \
             optim.weight_decay=0.1 \
             optim.clip=1.0 \
-            optim.warmup=0 \
             distributed.fsdp_type=no_shard \
             distributed.compile=true \
             distributed.model_dtype=bf16 \

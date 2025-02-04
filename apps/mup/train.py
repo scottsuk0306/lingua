@@ -315,8 +315,7 @@ def train(args: TrainArgs):
 
         # build optimizer after apply parallelisms to the model
         if args.use_mup:
-            factor = model.config.dim / model.config.mup_dim_model_base
-            optimizer, scheduler = build_mup_adamw(model, args.optim, args.steps, factor)
+            optimizer, scheduler = build_mup_adamw(model, args.optim, args.steps)
         else:    
             optimizer, scheduler = build_optimizer(model, args.optim, args.steps)
         

@@ -1,17 +1,17 @@
 for width in 256 512 1024 2048 4096; do
 # for width in 256; do
-    # for seed in 1; do
-    for seed in 1; do
+    for seed in 1 2; do
+    # for seed in 1 2 3 4 5; do
     # for seed in 1; do
         head_size=64
         n_heads=$((width / head_size))
         mup_base_width=256
         mup_width_multiplier=$(echo "scale=8; $width/$mup_base_width" | bc -l)
-        out_dir="apps/mup/coord_check/mup/out/width${width}_depth2_seed${seed}"
+        out_dir="apps/mup/coord_check/sp/out/width${width}_depth2_seed${seed}"
 
         python -m apps.mup.train \
-            name=mup \
-            use_mup=true \
+            name=sp \
+            use_mup=false \
             dump_dir=$out_dir \
             steps=10 \
             probe_freq=null \
@@ -19,7 +19,6 @@ for width in 256 512 1024 2048 4096; do
             optim.lr=3e-3 \
             optim.weight_decay=0.1 \
             optim.clip=1.0 \
-            optim.warmup=0 \
             distributed.fsdp_type=no_shard \
             distributed.compile=true \
             distributed.model_dtype=bf16 \
@@ -29,7 +28,6 @@ for width in 256 512 1024 2048 4096; do
             model.dim=$width \
             model.n_layers=2 \
             model.n_heads=$n_heads \
-            model.mup_dim_model_base=256 \
             data.root_dir=/mnt/vast/pretraining-data-jsonl/ \
             "data.sources={english/dclm_crossdeduped/shard_000: 100.0}" \
             data.batch_size=4 \

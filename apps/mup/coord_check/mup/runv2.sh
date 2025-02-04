@@ -10,12 +10,12 @@ run_training() {
     n_heads=$((width / head_size))
     mup_base_width=256
     mup_width_multiplier=$(echo "scale=8; $width/$mup_base_width" | bc -l)
-    out_dir="apps/mup/coord_check/sp/out/width${width}_depth2_seed${seed}"
+    out_dir="apps/mup/coord_check/mup/out/width${width}_depth2_seed${seed}"
     # randomly select a master port
     master_port=$(( ( RANDOM % 1000 )  + 28000 ))
 
     CUDA_VISIBLE_DEVICES=$gpu_id python -m apps.mup.train \
-        name=false \
+        name=mup \
         use_mup=true \
         dump_dir=$out_dir \
         steps=10 \
