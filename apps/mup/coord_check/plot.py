@@ -150,7 +150,7 @@ def main():
         ("feed_forward_act_abs_mean", "FFN Output", (1e-1, 1e2)),
         ("output_act_abs_mean", "Output Logits", (1e-3, 1e1)),
     ]
-    PARAMETERIZATIONS = ["sp", "mupv1", "mupv2", "mupv3"]
+    PARAMETERIZATIONS = ["sp", "mupv1", "mupv2", "mupv3", "mupv4", "mupv5", "mupv6"]
     WIDTHS = [256, 512, 1024, 2048, 4096]
     SEEDS = [1]
     T_MAX = 10

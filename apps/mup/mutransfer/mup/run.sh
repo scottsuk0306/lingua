@@ -36,6 +36,7 @@ run_training() {
         model.dim=$width \
         model.n_layers=2 \
         model.n_heads=$n_heads \
+        model.mup_scale_emb=1.0 \
         model.mup_dim_model_base=256 \
         data.root_dir=/mnt/vast/pretraining-data-jsonl/ \
         "data.sources={english/dclm_crossdeduped/shard_000: 100.0}" \
@@ -70,7 +71,7 @@ gpu_id=0
 job_count=0
 
 # cleanup previous runs
-# rm -rf apps/mup/mutransfer/mup/out/*
+# rm -rf apps/mup/mutransfer/mupv2/out/*
 
 # Run all combinations
 for width in "${widths[@]}"; do

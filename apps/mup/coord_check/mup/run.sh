@@ -59,7 +59,7 @@ run_training() {
 widths=(256 512 1024 2048 4096)
 # seeds=(1 2 3 4 5)
 seeds=(1)
-exp_name="mupv3"
+exp_name="mupv6"
 
 rm -rf apps/mup/coord_check/${exp_name}/out
 

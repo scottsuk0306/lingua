@@ -1,6 +1,7 @@
 # mup related outputs
 apps/mup/coord_check/*/out/*
 apps/mup/mutransfer/*/out/*
+apps/mup/mutransfer/*/out*/*
 apps/mup/grid_search/*/out/*
 
 *.pyc

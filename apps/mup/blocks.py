@@ -708,7 +708,7 @@ class BaseTransformer(nn.Module):
         attn_impl: str = "sdpa",
     ):
         ### Begin muP code ###
-        # h = h * self.config.mup_scale_emb
+        h = h * self.config.mup_scale_emb
         ### End muP code ###
 
         freq_cis = self.rope_embeddings(seqlen=self.max_seqlen, tok_idx=tok_idx)
