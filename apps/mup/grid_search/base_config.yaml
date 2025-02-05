@@ -1,0 +1,72 @@
+name: "mup"
+grad_acc_steps: 1
+dump_dir: "apps/mup/grid_search/${.name}"
+steps: 10_000
+probe_freq: null
+seed: 777
+
+optim:
+  lr: 6e-4
+  weight_decay: 0.1
+  warmup: 0
+  scheduler: "cosine"
+  decay_fraction: 0.1
+  lr_min_ratio: 0.01
+  clip: 1.0
+
+distributed:
+  fsdp_type: no_shard
+  compile: true
+  model_dtype: bf16
+  matmul_allow_tf32: false
+  selective_activation_checkpointing: false
+  tp_size: 1
+
+model:
+  dim: 256
+  n_layers: 18
+  n_heads: 16
+
+data:
+  root_dir: /mnt/vast/pretraining-data-jsonl/
+  sources:
+    chinese/fineweb-2/shard_000: 2
+    english/dclm_crossdeduped/shard_000: 77
+    japanese/fineweb-2/shard_000: 4
+    korean/data/community-oscar/shard_000: 2.5
+    korean/data/naver-blog/shard_000: 2.5
+    korean/data/naver-kin/shard_000: 2.5
+    korean/data/tokyo/shard_000: 3
+    korean/data/fineweb-2/shard_000: 2.5
+    code/the-stack-v2-train-smol/shard_000: 4
+  batch_size: 16
+  prefetch_size: 1024
+  seq_len: 4096
+  n_views: 2
+  load_async: true
+  add_bos: true
+  add_eos: true
+  tokenizer:
+    name: tiktoken
+    path: tokenizers/llama3/tokenizer.model
+
+profiling:
+  run: true
+  mem_warmup: 0
+  mem_steps: 4
+  profile_warmup: 100
+  profile_steps: 4
+
+checkpoint:
+  dump:
+    every: 1_000_000
+    keep: 0
+  eval:
+    every: 1_000_000
+    keep: -1
+
+logging:
+  freq: 1
+  wandb:
+    project: emergence-ablations-mup
+    entity: suyeong_korea_univ-korea-university

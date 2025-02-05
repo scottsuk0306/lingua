@@ -61,7 +61,7 @@ class DistributedArgs:
     )
     tp_size: int = 1
     selective_activation_checkpointing: bool = False
-    compile: bool = False
+    compile: bool = True
     fsdp_type: str = "no_shard"
     model_dtype: str = "bf16"
     float8_recipe: Optional[str] = None
