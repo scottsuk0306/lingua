@@ -96,7 +96,7 @@ class TrainArgs:
     
     ### Begin MuP code ###
     use_mup: bool = False
-    mup_enable_coord_check_logging: bool = True
+    mup_enable_coord_check_logging: bool = False
     ### End MuP code ###
 
     data: DataArgs = field(default_factory=DataArgs)
@@ -584,7 +584,12 @@ def train(args: TrainArgs):
                     f"  mem: {gpu_mem_stats.max_active_pct:.0f}%"
                     f"  pow: {gpu_mem_stats.power_draw/1000} W"
                 )
-
+                
+                # if train_state.step == 10000 and loss is bigger than 10, assume the run is diverging and exit
+                if train_state.step == 10000 and loss.item() > 10:
+                    logger.info("\n!!!! Loss is too high, exiting the job !!!!\n")
+                    sys.exit(0)
+                
             saved = False
             if every_n_steps(
                 train_state, args.checkpoint.dump.every, acc_step=0

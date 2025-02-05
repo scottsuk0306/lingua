@@ -168,11 +168,11 @@ def eval_on_val(generator, val_args: ValidationArgs, train_cfg):
     for src in val_args.sources:
         path = os.path.join(val_args.root_dir, src)
         srcs[path] = 1.0
-    for src in train_cfg.data.sources:
-        path = os.path.join(train_cfg.data.root_dir, src)
-        srcs[path] = 1.0
+    # for src in train_cfg.data.sources:
+    #     path = os.path.join(train_cfg.data.root_dir, src)
+    #     srcs[path] = 1.0
 
-    multi_state = init_choice_state("", srcs, 0, get_global_rank(), get_world_size(), "*.val.jsonl")
+    multi_state = init_choice_state("", srcs, 0, get_global_rank(), get_world_size(), "*.jsonl")
     path_to_iter = setup_sources(multi_state)
 
     max_gen_len = generator.max_gen_len
@@ -230,6 +230,10 @@ def launch_eval(cfg: EvalArgs):
         if not consolidate_path.exists() and get_global_rank() == 0:
             consolidate_path = consolidate_checkpoints(cfg.ckpt_dir)
 
+    if get_global_rank() == 0:
+        import wandb
+        from dotenv import dotenv_values
+        wandb.login(key=dotenv_values(".env")["WANDB_API_KEY"])
     Path(cfg.dump_dir).mkdir(parents=True, exist_ok=True)
     dump_config(cfg, Path(cfg.dump_dir) / "config.yaml", log_config=False)
 
@@ -250,14 +254,61 @@ def launch_eval(cfg: EvalArgs):
     val_results =  None
     if cfg.validation:
         val_results = eval_on_val(generator, cfg.validation, train_cfg)
+    def format_eval_results_for_wandb(results, harness_cfg):
+        prefix="downstream"
+        flattened = {}
+        has_few_shot = {}
+        for task in harness_cfg.tasks:
+            # num few shot is not configured for this task 
+            if not isinstance(task, dict):
+                continue
+            has_few_shot[task["task"]] = task["num_fewshot"]
+        
+        for name, res in results.items():
+            if name in has_few_shot:
+                name += f"_{has_few_shot[name]}"
+            name = f"{prefix}/{name}"
+            for metric, val in res.items():
+                if "alias" in metric:
+                    continue
+                if isinstance(metric, tuple):
+                    metric = metric[0]
+                if "stderr" in metric:
+                    continue
+                metric = metric.split(",")[0]
+                metric_name = f"{name}_{metric}"
+                flattened[metric_name] = val
+        return flattened
+
     if get_global_rank() == 0:
+        results = results['results']
+        import copy
+        results_ = copy.deepcopy(results)
+        wandb_flattened_res = format_eval_results_for_wandb(results_, harness_cfg=cfg.harness)
+        results = wandb_flattened_res
+        
+        if cfg.wandb is not None:
+            logger.info("Logging results to wandb")
+            logger.info("cfg.wandb: ", cfg.wandb)
+            import wandb
+            run = wandb.init(
+                project=cfg.wandb.project,
+                entity="suyeong_korea_univ-korea-university",
+                name=train_cfg.name,
+            )
+            
+            logger.info("name: ", train_cfg.name)
+            run.log(wandb_flattened_res, step=cfg.global_step)
         with open(Path(cfg.dump_dir) / "results.json", "w") as f:
             f.write(json.dumps(results))
-        logger.info(f"All evaluation results: {results['results']}")
+        logger.info(f"All evaluation results: {results}")
         if val_results is not None:
             with open(Path(cfg.dump_dir) / "validation.json", "w") as f:
                 f.write(json.dumps(val_results))
             logger.info(f"All validation results: {val_results}")
+            for lang, vres in val_results.items():
+                val_results = {f"val/{lang}_{k}": v for k, v in vres.items()}
+                run.log(val_results, step=cfg.global_step)
     if cfg.metric_log_dir and get_global_rank() == 0:
         metric_log_path = Path(cfg.metric_log_dir) / "metrics.eval.jsonl"
 
@@ -268,7 +319,7 @@ def launch_eval(cfg: EvalArgs):
         if cfg.global_step is not None:
             timestamp["global_step"] = cfg.global_step
         print(
-            json.dumps(timestamp | results["results"]),
+            json.dumps(timestamp | results),
             file=open(metric_log_path, mode="a"),
             flush=True,
         )

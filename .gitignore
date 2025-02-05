@@ -1,3 +1,6 @@
+# env variables
+.env
+
 # mup related outputs
 apps/mup/coord_check/*/out/*
 apps/mup/mutransfer/*/out/*

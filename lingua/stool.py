@@ -17,7 +17,7 @@ class StoolArgs:
     config: Any = None
     launcher: str = "sbatch"  # Can be sbatch or bash if already in salloc
     script: str = "apps.main.train"  # The script to run.
-    copy_code: bool = True  # Wether to copy code to dump dir
+    copy_code: bool = False  # Wether to copy code to dump dir
     dirs_exists_ok: bool = (
         False  # Wether to copy new code and config and run regardless that dir exists
     )
@@ -32,7 +32,7 @@ class StoolArgs:
     time: int = -1  # The time limit of the job (in minutes).
     account: str = ""
     qos: str = ""
-    partition: str = "learn"
+    partition: str = "hpc-mid"
     stdout: bool = False
 
 
@@ -170,7 +170,9 @@ def launch_job(args: StoolArgs):
         os.makedirs(f"{dump_dir}/code", exist_ok=args.dirs_exists_ok)
         print("Copying code ...")
         copy_dir(os.getcwd(), f"{dump_dir}/code")
-
+    
+    os.makedirs(dump_dir, exist_ok=True)
+    
     print("Saving config file ...")
     with open(f"{dump_dir}/base_config.yaml", "w") as cfg:
         cfg.write(OmegaConf.to_yaml(args.config))
